@@ -11,6 +11,7 @@ import numpy as np
 import streamlit as st
 import pandas as pd
 from arch import arch_model
+#Activos que me interesan
 cartera = {
     "MSCI": "IWDA.AS",
     "S&P500": "^GSPC",
@@ -61,7 +62,7 @@ def precio(Valor):
 def retorno(precio, Tiempo):
     ret = precio.pct_change(periods=tiempo[Tiempo]).dropna()*100
     return ret
-#Saca la volatilidad media respectoa l tiempo
+#Saca la volatilidad media respecto al tiempo
 def volatilidad(ret):
     vol = np.sqrt(((np.where(ret > 0, 0, ret)**2).mean()))
     return vol
@@ -70,32 +71,44 @@ def sortino_ratio(ret, vol):
     #Retorno/volatilidad negativa, no penaliza la volatilidad positiva
     sort = ret.mean()/vol
     return sort
-#Es un cálculo muy muy aproximado de como
+#Es un cálculo muy muy simplista que determina la cantidad de dinero que hay que invertir en el activo
 def halfkelly(ret, vol):
     halfk = ((ret.mean()/100)/(vol/100)**2)/2
     return halfk
+#Es un algoritmo simple que busca la caida más brusca que haya habido en el periodo de tiempo estipulado
+#Devuelve el drawdownmaximo
 def drawdownmax(ret):
     dmax = 0
     for val in ret:
         if dmax > val:
             dmax=val
+    #OJO: Lo ponemos en negativo para invertir el signo, al ser perdidas, se devolvía en negativo
     return -dmax
+#Devuelve el VaR, es decir, lo máximo que arriesgas matemáticamente el 99% de los dias 
 def VaR(vol):
+    #Z Score del 99%, el estandar de la industria es del 95%
     z = 2.33
     var = vol*z
     return var
+#Analiza el riesgo medio el peor 1% de los días
 def CVaR(ret, var):
     cvar = -(ret[ret < -abs(var)].mean())
     return cvar
+#La curtosis mide lo estable que se comporta un activo, cuanto mayor sea el valor, más loco es el activo analizado
 def curtosis(ret):
+    #Se utiliza la desviaciones y la desviación estandar elevado a 4 para castigar lo máximo posible las colas largas
+    #Se le resta tres ya que se compara con la curtosis de la campana de gauss que es 3
     curt = (((ret - ret.mean())**4).mean())/((ret.std())**4)-3
     return curt
+#Crea la media del precio respecto al tiempo estipulado
 def mediamovilsimple(precio, n):
     medmovs = precio.rolling(window=n).mean()
     return medmovs
+#Es el multiplicador basado en el n días seleccionados para el proceso
 def k(n):
     k = 2/(n+1)
     return k
+#Es una herramienta básica de trading que mide la aceleración del precio
 def MACD(precio):
     macd = pd.DataFrame()
     n1 = 12
@@ -105,16 +118,21 @@ def MACD(precio):
     macd["Señal"]= (macd["Rapida"]).ewm(span=n3).mean()
     macd["Conclusión"]= macd["Rapida"] - macd["Señal"]
     return macd
+
+#El modelo garch trata la volatilidad como una mezcla entre la volatilidad del pasado, la influencia de las noticias presentes y un mínimo de volatilidad
 def GARCH(ret):
     modelo = arch_model(ret, vol="GARCH", p=1,  q=1)
     entre = modelo.fit(disp="off")
     return entre
+#Esto hace una simulación de montecarlo, hace recorridos aleatorios basado en la rentabilidad pasada y en la volatilidad del activo
 def simulacion(entre, preci):
+    #Esta pensado para utilizarlo en dias, hace 1000 simulaciones
     simul = entre.forecast(horizon=252, method="simulation", simulations=1000)
     retor = (simul.simulations.values[-1, :, :]).T
     ult_precio = preci.iloc[-1]
     precio_sim = ult_precio * (1+(retor/100)).cumprod(axis=0)
     return precio_sim
+#Es tambien una simulación de montecarlo, pero es una versión pesmista, elimina cualquier tendencia alcista
 def driftcero(entre, preci):
     simul = entre.forecast(horizon=252, method="simulation", simulations=1000)
     retor = (simul.simulations.values[-1, :, :]-entre.params["mu"]).T
@@ -137,8 +155,8 @@ if st.button("Calcular"):
     halfk = halfkelly(ret, vol)
     drawmax = drawdownmax(ret)
     var = VaR(vol)
-    cvar = CVaR(ret, var);
-    curt = curtosis(ret);
+    cvar = CVaR(ret, var)
+    curt = curtosis(ret)
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Precio")
